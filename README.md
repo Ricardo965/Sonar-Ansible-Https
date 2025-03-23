@@ -19,17 +19,23 @@ Lo primero fue preparar el entorno. Usé **Ansible** para instalar **Docker** en
 ansible-playbook -i inventory/hosts.ini playbooks/install_docker.yml
 ```
 
+![install_docker](img/install_docker.png)
+
 Después, instalé el **CLI de SonarQube**, ya que lo iba a necesitar más adelante para los análisis de código:
 
 ```bash
 ansible-playbook -i inventory/hosts.ini playbooks/install_sonnarcli.yml
 ```
 
+![install_sonnar](img/install_sonnar.png)
+
 Con Docker y SonarQube listos, lancé los contenedores para correr los servicios necesarios:
 
 ```bash
 ansible-playbook -i inventory/hosts.ini playbooks/run_container.yml
 ```
+
+![run_dockers](img/run_dockers.png)
 
 Finalmente, configuré **Nginx** y los certificados TLS para servir SonarQube usando HTTPS para poder integrar una GitHub app con mi instancia de SonarQube en la VM, dado que es un requisito que la comunicación entre estas 2 plataformas sea a través de HTTPS.
 
