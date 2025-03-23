@@ -1,0 +1,70 @@
+---
+- name: Instalar paquete unzip
+  package:
+    name: unzip
+    state: present
+
+- name: Descargar SonarScanner CLI
+  get_url:
+    url: "{{ sonarscanner_url }}"
+    dest: "{{ sonarscanner_zip_file }}"
+    mode: "0644"
+
+- name: Crear directorio de instalación si no existe
+  file:
+    path: "/opt"
+    state: directory
+    mode: "0755"
+
+- name: Eliminar instalación anterior si existe
+  file:
+    path: "{{ sonarscanner_install_dir }}"
+    state: absent
+  when: ansible_check_mode == false
+
+- name: Extraer archivo ZIP de SonarScanner
+  unarchive:
+    src: "{{ sonarscanner_zip_file }}"
+    dest: "/opt"
+    remote_src: yes
+    creates: "/opt/sonar-scanner-{{ sonarscanner_version }}-linux-x64"
+
+- name: Renombrar directorio extraído
+  command: mv /opt/sonar-scanner-{{ sonarscanner_version }}-linux-x64 {{ sonarscanner_install_dir }}
+  args:
+    creates: "{{ sonarscanner_install_dir }}"
+  when: ansible_check_mode == false
+
+- name: Configurar PATH para todos los usuarios
+  blockinfile:
+    path: /etc/profile.d/sonarscanner.sh
+    create: yes
+    block: |
+      export PATH=$PATH:{{ sonarscanner_install_dir }}/bin
+    mode: "0644"
+
+- name: Configurar PATH para el usuario actual
+  blockinfile:
+    path: "~/.bashrc"
+    create: yes
+    block: |
+      export PATH=$PATH:{{ sonarscanner_install_dir }}/bin
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - SONARSCANNER"
+  become: true
+  become_user: adminuser
+
+- name: Eliminar archivo ZIP descargado
+  file:
+    path: "{{ sonarscanner_zip_file }}"
+    state: absent
+  when: ansible_check_mode == false
+
+- name: Verificar instalación
+  command: "{{ sonarscanner_install_dir }}/bin/sonar-scanner -v"
+  register: sonarscanner_version_check
+  changed_when: false
+  become: false
+
+- name: Mostrar versión de SonarScanner
+  debug:
+    var: sonarscanner_version_check.stdout_lines

@@ -1,0 +1,50 @@
+---
+- name: Crear red sonarnet
+  docker_network:
+    name: sonarnet
+    state: present
+
+- name: Crear volúmenes necesarios
+  docker_volume:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - sonarqube_conf
+    - sonarqube_data
+    - sonarqube_extensions
+    - sonarqube_bundled-plugins
+    - postgresql
+    - postgresql_data
+
+- name: Ejecutar contenedor PostgreSQL
+  docker_container:
+    name: db
+    image: postgres
+    state: started
+    networks:
+      - name: sonarnet
+    env:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar
+    volumes:
+      - postgresql:/var/lib/postgresql
+      - postgresql_data:/var/lib/postgresql/data
+
+- name: Ejecutar contenedor SonarQube
+  docker_container:
+    name: sonarqube
+    image: sonarqube
+    state: started
+    ports:
+      - "9000:9000"
+    networks:
+      - name: sonarnet
+    env:
+      SONARQUBE_JDBC_URL: jdbc:postgresql://db:5432/sonar
+      SONARQUBE_JDBC_USERNAME: sonar
+      SONARQUBE_JDBC_PASSWORD: sonar
+    volumes:
+      - sonarqube_conf:/opt/sonarqube/conf
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_bundled-plugins:/opt/sonarqube/lib/bundled-plugins

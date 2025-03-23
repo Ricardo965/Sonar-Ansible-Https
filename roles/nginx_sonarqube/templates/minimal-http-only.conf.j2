@@ -1,0 +1,34 @@
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    
+    server_name {{ sonarqube_domain }};
+    
+    # Define root directory
+    root /var/www/html;
+    
+    # Improved logs for detailed debugging
+    access_log /var/log/nginx/acme.access.log;
+    error_log /var/log/nginx/acme.error.log debug;
+    
+    # ACME challenge location with enhanced configuration
+    location /.well-known/acme-challenge/ {
+        allow all;
+        default_type "text/plain";
+        autoindex on;
+        
+        # More explicit settings to ensure proper file serving
+        try_files $uri =404;
+        
+        # Disable any caching
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Pragma "no-cache";
+        add_header Expires "0";
+    }
+    
+    # For all other requests
+    location / {
+        # Simple response for testing
+        return 200 "Sitio en configuración. Esperando validación de Let's Encrypt.";
+    }
+}

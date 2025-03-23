@@ -1,0 +1,3 @@
+sonarqube_domain: "cloudtests.site"
+sonarqube_port: 9000
+certbot_email: "ricardiox2000@gmail.com.com"

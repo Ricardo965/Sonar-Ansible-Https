@@ -1,0 +1,5 @@
+---
+- hosts: azure_vm
+  become: true
+  roles:
+    - docker_install

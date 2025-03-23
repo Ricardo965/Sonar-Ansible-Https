@@ -1,0 +1,238 @@
+---
+- name: Instalar paquetes necesarios
+  apt:
+    name:
+      - nginx
+      - certbot
+      - python3-certbot-nginx
+    state: present
+    update_cache: yes
+
+- name: Detener servicios en el puerto 80
+  service:
+    name: "{{ item }}"
+    state: stopped
+  loop:
+    - nginx
+    - apache2
+  ignore_errors: true
+
+- name: Verificar que los puertos 80 y 443 están libres
+  wait_for:
+    port: "{{ item }}"
+    state: stopped
+    timeout: 10
+  loop:
+    - 80
+    - 443
+  ignore_errors: true
+
+- name: Limpiar configuraciones anteriores
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /var/www/html/.well-known
+    - /etc/nginx/sites-enabled/default
+    - /etc/nginx/sites-available/default
+
+- name: Crear directorio para validación Let's Encrypt
+  file:
+    path: /var/www/html/.well-known/acme-challenge
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+    recurse: true
+
+- name: Ensure proper permissions for acme-challenge directory
+  file:
+    path: /var/www/html/.well-known/acme-challenge
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+    recurse: true
+
+- name: Crear archivo de prueba para validación
+  copy:
+    content: "Archivo de prueba para validación de Let's Encrypt"
+    dest: /var/www/html/.well-known/acme-challenge/test.txt
+    owner: www-data
+    group: www-data
+    mode: "0644"
+
+- name: Verificar estado de firewall
+  command: ufw status
+  register: firewall_status
+  changed_when: false
+  ignore_errors: true
+
+- name: Mostrar estado del firewall
+  debug:
+    var: firewall_status.stdout_lines
+
+- name: Permitir tráfico HTTP y HTTPS en el firewall
+  command: "ufw allow {{ item }}/tcp"
+  loop:
+    - 80
+    - 443
+  when: "'active' in firewall_status.stdout"
+  ignore_errors: true
+
+- name: Crear configuración Nginx básica solo para HTTP
+  template:
+    src: minimal-http-only.conf.j2
+    dest: /etc/nginx/sites-available/default
+  notify: Reiniciar Nginx
+
+- name: Habilitar configuración de Nginx
+  file:
+    src: /etc/nginx/sites-available/default
+    dest: /etc/nginx/sites-enabled/default
+    state: link
+
+- name: Verificar configuración de Nginx
+  command: nginx -t
+  register: nginx_test
+  failed_when: nginx_test.rc != 0
+  changed_when: false
+
+- name: Iniciar Nginx
+  service:
+    name: nginx
+    state: started
+    enabled: yes
+
+- name: Wait for Nginx to fully initialize
+  pause:
+    seconds: 10
+  when: nginx_test.rc == 0
+
+- name: Esperar a que Nginx esté disponible
+  wait_for:
+    port: 80
+    host: 127.0.0.1
+    delay: 5
+    timeout: 30
+
+- name: Verificar acceso al archivo de prueba localmente
+  uri:
+    url: "http://localhost/.well-known/acme-challenge/test.txt"
+    return_content: true
+  register: test_result_local
+  ignore_errors: true
+
+- name: Reportar estado de validación local
+  debug:
+    msg: "Validación local {{ 'OK' if test_result_local.status == 200 else 'FALLÓ' }}"
+
+- name: Intentar verificar acceso al archivo de prueba externamente (si es posible)
+  uri:
+    url: "http://{{ sonarqube_domain }}/.well-known/acme-challenge/test.txt"
+    return_content: true
+    validate_certs: no
+  register: test_result_external
+  ignore_errors: true
+
+- name: Reportar estado de validación externa
+  debug:
+    msg: "{{ test_result_external }}"
+
+- name: Verificar si el dominio resuelve correctamente
+  command: "dig +short {{ sonarqube_domain }}"
+  register: dns_check
+  ignore_errors: true
+  changed_when: false
+
+- name: Mostrar información DNS
+  debug:
+    var: dns_check.stdout_lines
+
+- name: Verificar que el dominio resuelve a la IP correcta del servidor
+  debug:
+    msg: "Verifica que la dirección IP '{{ dns_check.stdout_lines[0] | default('No resuelve') }}' coincida con la IP pública de este servidor"
+
+- name: Generar script de diagnóstico
+  copy:
+    dest: /tmp/letsencrypt-diagnose.sh
+    content: |
+      #!/bin/bash
+      echo "=== Verificación de puertos y servicios ==="
+      netstat -tulpn | grep -E ':(80|443)'
+
+      echo "=== Verificación de resolución DNS ==="
+      dig +short {{ sonarqube_domain }}
+
+      echo "=== Verificación de accesibilidad HTTP (desde el servidor) ==="
+      curl -v http://localhost/.well-known/acme-challenge/test.txt
+
+      echo "=== Comprobando logs de Nginx ==="
+      tail -n 50 /var/log/nginx/access.log
+      tail -n 50 /var/log/nginx/error.log
+    mode: "0755"
+
+- name: Ejecutar script de diagnóstico
+  command: /tmp/letsencrypt-diagnose.sh
+  register: diagnostico
+  changed_when: false
+
+- name: Mostrar diagnóstico
+  debug:
+    var: diagnostico.stdout_lines
+
+- name: Obtener certificado SSL con Let's Encrypt con modo verbose
+  command: >
+    certbot certonly --webroot 
+    -w /var/www/html 
+    -d {{ sonarqube_domain }}
+    --non-interactive 
+    --agree-tos 
+    -m {{ certbot_email }}
+    -v
+  register: certbot_result
+  ignore_errors: true
+
+- name: Mostrar resultado detallado de certbot
+  debug:
+    var: certbot_result
+
+- name: Configurar renovación automática de certificados
+  cron:
+    name: "Renovar certificados Let's Encrypt"
+    job: "certbot renew --quiet --no-self-upgrade"
+    hour: "3"
+    minute: "30"
+    weekday: "1"
+  when: certbot_result is defined and certbot_result.rc == 0
+
+- name: Configurar Nginx para SonarQube con SSL
+  template:
+    src: nginx-sonarqube-ssl.conf.j2
+    dest: /etc/nginx/sites-available/default
+  when: certbot_result is defined and certbot_result.rc == 0
+  notify: Reiniciar Nginx
+
+- name: Configurar Nginx para SonarQube sin SSL (fallback)
+  template:
+    src: nginx-sonarqube-nossl.conf.j2
+    dest: /etc/nginx/sites-available/default
+  when: certbot_result is not defined or certbot_result.rc != 0
+  notify: Reiniciar Nginx
+
+- name: Asegurar que Nginx está iniciado
+  service:
+    name: nginx
+    state: started
+    enabled: yes
+
+- name: Verificar que SonarQube está accesible a través de Nginx
+  uri:
+    url: "http://localhost:{{ sonarqube_port }}"
+    status_code: 200
+  register: sonarqube_status
+  ignore_errors: true
+
+- name: Mostrar estado de SonarQube
+  debug:
+    msg: "SonarQube está {{ 'accesible' if sonarqube_status.status == 200 else 'no accesible' }} en el puerto {{ sonarqube_port }}."
