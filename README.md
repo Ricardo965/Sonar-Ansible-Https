@@ -73,9 +73,36 @@ Ahora, se debe configurar un Homepage URL y el Callback URL, lo que debe coincid
 
 ![app_name](img/app_callback.png)
 
+Añadido a esto, también se debe crear una private key en el momento de la configuración de la github app para usarla para autenticación con Sonar. Esta llave privada será usada en la config de autorización de Sonar.
+
+![app_priv_key](img/app_private_key.png)
+
+El apartado de webhook se deja vacío, pues para la integración básica para hacer checkout del repositorio no es necesaria.
+
+![app_priv_key](img/app_webhook.png)
+
+Ahora bien, una vez hemos creado la github app, se debe instalar en alguna organización de la que se haga parte. Por ello, decidí instalarla en la organización por defecto de mi usuario de github.
+
+Como también, se deben configurar permisos para pull requests, push, ramas, administración. Esto se puede ver a detalle en la documentación de la integracion de sonar con [github](https://docs.sonarsource.com/sonarqube-server/10.8/devops-platform-integration/github-integration/setting-up-at-global-level/setting-up-github-app/)
+
+![app_install](img/app_install.png)
+
+Después de realizar todos estos pasos, se debe configurar el sonar con los valores, secretos, ids y claves que hemos configurado en la GitHub App. Esto se logra al entrar a Projects > Import from GitHub. O también en Administration > Integration with DevOps platforms > GitHub en SonarQube.
+
+![sonnar_config](img/sonnar_config.png)
+
 ---
 
-## **⚙️ Creación del Pipeline de CI/CD**
+## **⚙️ Creación del Pipeline de CI**
+
+Para el ejemplo de un pipeline de CI, voy a usar de ejemplo un repositorio de una aplicación de microservicios [microservices-app](https://github.com/Ricardo965/microservice-app-docker-practice). Para la configuración, se deben crear los siguientes secrets del repositorio:
+
+![secrets](img/secrets.png)
+
+La llave y el token se generan al momento de seleccionar la importación de un projecto de github y el host URL es el mismo Server Base URL configurado en pasos anteriores:
+
+![sonar_project](img/sonar_project.png)
+![sonar_token](img/sonar_token.png)
 
 Con el entorno listo, el siguiente paso fue crear un **pipeline de CI con GitHub Actions**. Diseñé un workflow que se activara en cada push a `main`, compilara el código y lo analizara con SonarQube.
 
@@ -129,10 +156,16 @@ Este pipeline hace lo siguiente:
 
 ## **✅ Resultado Final**
 
-Con todo esto en su lugar, ahora cada vez que hago un push a `main`:  
+![sonnar_result](img/sonnar_result.png)
+
+Con todo esto en su lugar, ahora cada vez que hago un push a `main`:
+
 ✅ El código se clona dentro del runner temporal de GitHub Actions.
+
 ✅ El runner instala Java y compila el código con Maven.
+
 ✅ El análisis de SonarQube se ejecuta desde el runner, enviando los resultados al servidor de SonarQube configurado.
+
 ✅ **SonarQube analiza la calidad del código**, ayudando a detectar errores y mejorar la mantenibilidad.
 
 Ahora, tengo un proceso **automatizado y confiable** para mi CI, con una infraestructura sólida respaldada por **Ansible, Docker, SonarQube y GitHub Actions**. 🚀
